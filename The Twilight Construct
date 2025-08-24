@@ -515,3 +515,11 @@ Feel free to expand the theoretical content, add new voices, create additional r
 ## License
 
 MIT License - Open for collaboration and expansion.
+
+git clone <repo-url>
+cd <the twilight construct>
+git checkout -b runnable-version
+# make your changes
+git add .
+git commit -m "Add runnable version of project"
+git push origin runnable-version

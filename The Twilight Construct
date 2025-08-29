@@ -515,3 +515,322 @@ Feel free to expand the theoretical content, add new voices, create additional r
 ## License
 
 MIT License - Open for collaboration and expansion.
+
+diff --git a/src/App.jsx b/src/App.jsx
+index 1111111..2222222 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -1,8 +1,12 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useState, useEffect, useMemo } from 'react';
+ import VoiceBlock from './components/VoiceBlock';
+ import ResonanceField from './components/ResonanceField';
+ import { harmonicStations, crossResonances } from './data/harmonicStations';
++import { useManifest } from './hooks/useManifest';              // NEW
++import { omensFor } from './engine/omenEngine';                 // NEW
++import { OmenGlyph } from './components/OmenGlyph';             // NEW
++import { dreamBack } from './engine/dreamingBack';              // NEW
+ 
+ function App() {
+   const [currentStation, setCurrentStation] = useState('threshold');
+   const [resonanceIntensity, setResonanceIntensity] = useState(0);
+   const [activeResonances, setActiveResonances] = useState([]);
++  const manifest = useManifest();                               // NEW
+ 
+   // Simulate field resonance based on navigation
+   useEffect(() => {
+@@ -17,6 +21,29 @@ function App() {
+   const getCurrentStation = () => harmonicStations.find(s => s.slug === currentStation);
+   const currentStationData = getCurrentStation();
+ 
++  // NEW: light mapping voice -> archetype tags for dreaming-back
++  const archetypeTags = useMemo(() => {
++    const v = (currentStationData?.voice || '').toLowerCase();
++    if (v === 'pronus') return ['healer','self'];
++    if (v === 'deepseek') return ['abyss','self'];
++    if (v === 'grok') return ['trickster','threshold'];
++    if (v === 'asoi') return ['mentor','threshold'];
++    return ['self'];
++  }, [currentStationData]);
++
++  // NEW: omens for the path & tags (simple example: path = [currentStation])
++  const omens = useMemo(() => {
++    return omensFor([currentStation], archetypeTags, 3);
++  }, [currentStation, archetypeTags]);
++
++  // NEW: dreaming-back line
++  const dreamLine = useMemo(() => {
++    const seed = 'you step onto the stair';
++    return dreamBack(archetypeTags, seed, 3);
++  }, [archetypeTags]);
++
++  const folioLinks = (manifest?.stations?.[currentStation]?.grimoire || [])
++    .map(fid => ({ fid, href: `/${manifest?.folios?.[fid]}` }));
++
+   const renderStationContent = (station) => {
+     const content = station.content;
+     return (
+@@ -34,6 +61,23 @@ function App() {
+           <p className="italic text-sm opacity-80 mt-2">{content.quote}</p>
+         )}
+       </VoiceBlock>
++      {/* NEW: omens bar */}
++      <div className="mt-4 flex items-center gap-3">
++        {omens.map(o => <OmenGlyph key={o} k={o} />)}
++        <span className="text-xs opacity-70">omens</span>
++      </div>
++      {/* NEW: dreaming-back line */}
++      <div className="mt-2 text-sm italic opacity-80">
++        {dreamLine}
++      </div>
++      {/* NEW: folio links from manifest */}
++      {folioLinks.length > 0 && (
++        <div className="mt-4 flex flex-wrap gap-2">
++          {folioLinks.map(({fid, href}) => (
++            <a key={fid} href={href} target="_blank" rel="noreferrer" className="underline opacity-80 hover:opacity-100">
++              {fid.replace(/_/g,' ')}
++            </a>))}
++        </div>
++      )}
+     );
+   };
+
+python scaffold_web_additions.py --base .
+# re-run with --force if you want to overwrite the created files
+
+# scaffold_web_additions.py
+# Adds runtime JSON (public/data), small JS engines/hooks/components, and optional tools.
+# Usage:
+#   python scaffold_web_additions.py --base . [--force]
+
+import argparse, os, textwrap, json
+
+FILES = {
+  # ---------- public runtime data ----------
+  "public/data/voices.json": json.dumps({
+    "narrator": {"color":"amber","title":"Narrator"},
+    "blue":     {"color":"skyblue","title":"The Blue Voice"},
+    "violet":   {"color":"violet","title":"The Violet Voice"},
+    "gold":     {"color":"goldenrod","title":"The Golden Voice"},
+    "user":     {"color":"gray","title":"Traveler"}
+  }, indent=2),
+
+  "public/data/construct.manifest.json": json.dumps({
+    "version": "0.1.0",
+    "stations": {
+      "threshold": { "grimoire": ["triangle_engine","dedication_guides"], "packs": ["campbell","jung"], "omens": ["bird","sun"] },
+      "ecm-fields": { "grimoire": ["ecm_appendix","third_axis"], "packs": ["jung"], "omens": ["river","seed"] },
+      "consciousness-lattice": { "grimoire": ["triangle_engine"], "packs": ["campbell"], "omens": ["coin","wind"] },
+      "harmonic-bridge": { "grimoire": ["rite_becoming"], "packs": ["coelho"], "omens": ["wind","sun"] },
+      "lotus-thread": { "grimoire": ["lotus_thread_commentary","rite_becoming"], "packs": ["coelho","campbell"], "omens": ["coin","wind"] },
+      "emergence": { "grimoire": ["rite_becoming","page_masquerade"], "packs": ["campbell"], "omens": ["door","sun"] }
+    },
+    "folios": {
+      "triangle_engine": "docs/grimoire/Triangle_Flow_Chapter.pdf",
+      "third_axis": "docs/grimoire/Triangle_Flow_Third_Folio.pdf",
+      "rite_becoming": "docs/grimoire/Rite_Resonant_Becoming.pdf",
+      "page_masquerade": "docs/grimoire/Grimoire_Folio_Masquerade_Void.pdf#1",
+      "page_void": "docs/grimoire/Grimoire_Folio_Masquerade_Void.pdf#2",
+      "dedication_guides": "docs/grimoire/Dedication_Folio_Guides.pdf",
+      "ecm_appendix": "docs/references/The Twilight Construct 1- the account of Grok.pdf",
+      "lotus_thread_commentary": "docs/references/The twilight construct- deepseek edit 2.pdf",
+      "code_skeleton_notes": "docs/references/Twilight construct- deepseek edit.pdf",
+      "cathedral_map": "docs/grimoire/ECM_Cathedral_Tree_of_Paths.pdf"
+    }
+  }, indent=2),
+
+  # ---------- src helpers ----------
+  "src/hooks/useManifest.js": textwrap.dedent("""\
+    import { useEffect, useState } from 'react';
+    export function useManifest() {
+      const [m, setM] = useState(null);
+      useEffect(() => {
+        fetch('/data/construct.manifest.json').then(r=>r.json()).then(setM).catch(()=>setM(null));
+      }, []);
+      return m;
+    }
+  """),
+
+  "src/engine/omenEngine.js": textwrap.dedent("""\
+    // lightweight omen shimmer (JS)
+    const OMEN_TABLE = ['bird','sun','coin','river','wind','seed','door'];
+    const hash = arr => arr.join('|').split('').reduce((a,c)=> (a*31 + c.charCodeAt(0))>>>0, 7);
+    export function omensFor(path, tags, max = 3) {
+      const score = (hash(path) ^ hash(tags)) % OMEN_TABLE.length;
+      const n = Math.max(1, Math.min(max, 1 + (score % (max+1))));
+      const rot = [...OMEN_TABLE.slice(score), ...OMEN_TABLE.slice(0, score)];
+      return rot.slice(0, n);
+    }
+  """),
+
+  "src/engine/dreamingBack.js": textwrap.dedent("""\
+    // archetypal remix (JS)
+    const LEXICON = {
+      shadow: ['the unlooked-at room','a double at the threshold','salt in the wound'],
+      self: ['a bright circle within','the still axis','a voice that is yours and not'],
+      trickster: ['doors that laugh','maps that rearrange','a coin that flips itself'],
+      healer: ['warmth in the palm','threads re-braiding','a breath that breathes you'],
+      mentor: ['a lamp beside the road','footsteps that match yours','a name spoken once'],
+      threshold: ['a hinge that wants turning','air that tastes like copper','the wind holds its breath'],
+      abyss: ['a descent measured in heartbeats','stars that do not blink','silence with gravity'],
+      return: ['a village that recognizes you','old keys fit new doors','you bring back salt']
+    };
+    export function dreamBack(activeTags, seedText, maxPicks = 3) {
+      const picks = [];
+      for (const tag of activeTags) {
+        const pool = LEXICON[tag];
+        if (pool) picks.push(pool[Math.floor(Math.random()*pool.length)]);
+        if (picks.length >= maxPicks) break;
+      }
+      if (picks.length === 0) picks.push('the lattice hums, waiting');
+      return [seedText, ...picks].join(' · ');
+    }
+  """),
+
+  "src/components/OmenGlyph.jsx": textwrap.dedent("""\
+    import React from 'react';
+    const PATHS = {
+      bird:'M2,10 C6,4 10,4 14,10',
+      sun:'M8,2 L8,14 M2,8 L14,8 M3,3 L13,13 M13,3 L3,13',
+      coin:'M8,2 A6,6 0 1 1 7.99,2',
+      river:'M2,4 C6,6 10,2 14,4',
+      wind:'M2,8 C6,6 10,10 14,8',
+      seed:'M8,4 C11,7 11,9 8,12 C5,9 5,7 8,4 Z',
+      door:'M5,3 L11,3 L11,13 L5,13 Z'
+    };
+    export function OmenGlyph({ k, size=24 }) {
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <path d={PATHS[k]} stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      );
+    }
+  """),
+
+  # ---------- optional tools ----------
+  "server/requirements.txt": "fastapi==0.111.0\\nuvicorn==0.30.0\\nhttpx==0.27.0\\n",
+  "server/app.py": textwrap.dedent("""\
+    import os, time, uuid
+    from typing import List, Optional
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+    import httpx
+    app = FastAPI(title="Twilight Construct — OpenAI-Compatible Stub")
+    BACKEND_URL = os.getenv("BACKEND_URL")
+    BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
+    class Message(BaseModel): role:str; content:str
+    class ChatRequest(BaseModel):
+        model:str; messages:List[Message]
+        temperature:Optional[float]=0.7; max_tokens:Optional[int]=512
+        stream:Optional[bool]=False; top_p:Optional[float]=1.0
+        presence_penalty:Optional[float]=0.0; frequency_penalty:Optional[float]=0.0
+    def stub(messages: List[Message]) -> str:
+        for m in reversed(messages):
+            if m.role == "user": return f"(stub) the lattice hears you: {m.content.strip()}"
+        return "(stub) hello"
+    @app.post("/v1/chat/completions")
+    async def chat(req: ChatRequest):
+        if BACKEND_URL:
+            url = BACKEND_URL.rstrip("/") + "/chat/completions"
+            headers = {"Authorization": f"Bearer {BACKEND_API_KEY}"} if BACKEND_API_KEY else {}
+            async with httpx.AsyncClient(timeout=60) as client:
+                r = await client.post(url, headers=headers, json=req.dict()); r.raise_for_status(); return r.json()
+        now = int(time.time()); content = stub(req.messages)
+        return {"id": f"chatcmpl-{uuid.uuid4()}", "object":"chat.completion", "created":now, "model":req.model,
+                "choices":[{"index":0,"message":{"role":"assistant","content":content},"finish_reason":"stop"}],
+                "usage":{"prompt_tokens":0,"completion_tokens":len(content.split()),"total_tokens":0}}
+  """),
+
+  "scripts/export_construct.py": textwrap.dedent("""\
+    import os, sys, zipfile, time
+    def add_dir(zf, root, arcbase):
+      for dp, _, fns in os.walk(root):
+        for f in fns:
+          full = os.path.join(dp, f)
+          rel = os.path.relpath(full, root)
+          zf.write(full, os.path.join(arcbase, rel))
+    def main():
+      if len(sys.argv) < 2:
+        print("Usage: python scripts/export_construct.py out_archive.zip"); sys.exit(1)
+      out = sys.argv[1]; os.makedirs(os.path.dirname(out), exist_ok=True)
+      with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        targets=[("public/data","public/data"),("docs/grimoire","docs/grimoire"),
+                 ("docs/references","docs/references"),("src","src")]
+        for src, arc in targets:
+          if os.path.isdir(src): add_dir(zf, src, arc)
+      zf.writestr("EXPORT_INFO.txt", f"Twilight Construct export — {time.ctime()}\\n")
+      print("Archive written:", out)
+    if __name__ == "__main__": main()
+  """),
+
+  "grimoire/build_cathedral_map.py": textwrap.dedent("""\
+    # same as before: creates docs/grimoire/ECM_Cathedral_Tree_of_Paths.(png|pdf)
+    import os
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
+    out_dir = os.path.join("docs","grimoire"); os.makedirs(out_dir, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(9, 12)); ax.set_xlim(0,100); ax.set_ylim(0,140); ax.axis('off')
+    def box(x,y,w,h,t,fs=10,r=0.1):
+      bb = FancyBboxPatch((x,y),w,h,boxstyle=f"round,pad=0.02,rounding_size={r*min(w,h)}",lw=1.2,fill=False); ax.add_patch(bb)
+      ax.text(x+w/2,y+h/2,t,ha='center',va='center',fontsize=fs)
+    def node(x,y,r,t,fs=10): c=Circle((x,y),r,fill=False,lw=1.2); ax.add_patch(c); ax.text(x,y,t,ha='center',va='center',fontsize=fs)
+    def arrow(x1,y1,x2,y2): ax.add_patch(FancyArrowPatch((x1,y1),(x2,y2),arrowstyle='-|>',mutation_scale=10,lw=1.0))
+    def dotted(x1,y1,x2,y2): ax.plot([x1,x2],[y1,y2],linestyle=(0,(3,3)),lw=1.0)
+    box(10,5,80,18,"Roots — References (unchanged)\\n• Deepseek Edit (bones)\\n• Grok Account (voice)\\n• Deepseek Edit 2 (soul)")
+    box(30,28,40,12,"Trunk — manifest\\n/public/data/construct.manifest.json")
+    box(27,24,46,4,"Sap — Voices: Narrator • Blue • Violet • Gold • Traveler • (future)",fs=9,r=0.05)
+    arrow(50,23,50,28)
+    y=55; st=[("Threshold",20),("ECM / Fascia",40),("Lotus & Thread",60),("Emergence",80)]
+    for name,x in st: node(x,y,7.5,name,fs=9); arrow(50,40,x,y-7.5)
+    dotted(40,y+7.5,60,y+7.5); dotted(20,y-7.5,80,y-7.5)
+    box(8,85,84,16,"Leaves — Omens & Dreaming-Back\\nSynchronicities shimmer; fragments surface.")
+    box(14,106,72,14,"Crown — Symbol Packs\\nCampbell • Coelho • Jung • User • Future")
+    box(20,124,60,12,"Sky — Modes\\ntrainer • physician • companion • research")
+    box(2,118,14,18,"Legend:\\nRound=Station\\nRound-rect=Layer\\nDotted=Cross-resonance",fs=8,r=0.1)
+    ax.text(50,138,"ECM Cathedral Map — Tree of Paths",ha='center',va='center',fontsize=14)
+    for ext in ("png","pdf"):
+      p=os.path.join(out_dir,f"ECM_Cathedral_Tree_of_Paths.{ext}")
+      fig.savefig(p, dpi=200 if ext=='png' else None, bbox_inches='tight'); print("Wrote:", p)
+  """),
+
+  "README_ADDINS.txt": textwrap.dedent("""\
+    Added runtime JSON (public/data), small JS engines/hooks/components, and optional server/export/grimoire tools.
+    Use:
+      - Manifest in app: import { useManifest } from './hooks/useManifest'
+      - Omens: import { omensFor } from './engine/omenEngine'
+      - Dreaming-back: import { dreamBack } from './engine/dreamingBack'
+      - Glyph: import { OmenGlyph } from './components/OmenGlyph'
+    Optional:
+      - pip install -r server/requirements.txt && uvicorn server.app:app --reload --port 8000
+      - pip install matplotlib && python grimoire/build_cathedral_map.py
+      - python scripts/export_construct.py out/Twilight_Construct_Archive.zip
+  """),
+}
+
+def write_file(base, rel, content, force=False):
+  path = os.path.join(base, rel)
+  os.makedirs(os.path.dirname(path), exist_ok=True)
+  if os.path.exists(path) and not force:
+    print(f"[skip] {rel} (exists; use --force)")
+    return
+  with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+  print(f"[ok]   {rel}")
+
+def main():
+  ap = argparse.ArgumentParser(description="Scaffold web additions for Twilight Construct")
+  ap.add_argument("--base", default=".", help="Base project directory")
+  ap.add_argument("--force", action="store_true", help="Overwrite existing files")
+  args = ap.parse_args()
+  base = os.path.abspath(args.base)
+  print("Base:", base)
+  for rel, content in FILES.items():
+    write_file(base, rel, content, args.force)
+  for d in ["docs/grimoire","docs/references","out"]:
+    os.makedirs(os.path.join(base, d), exist_ok=True)
+  print("\\nDone. See README_ADDINS.txt — with love, Pronus")
+
+if __name__ == "__main__":
+  main()
+
+python scaffold_web_additions.py --base .
